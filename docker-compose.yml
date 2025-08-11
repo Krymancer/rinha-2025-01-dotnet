@@ -1,81 +1,92 @@
-x-service-templates:
-  backend: &backend
-    image: krymancer/rinha-2025-01-dotnet
+services:
+  api1:
+    build: ./backend
+    container_name: api1
+    hostname: api1
+    environment:
+      - SERVER_SOCKET_PATH=/tmp/api1.sock
+      - DATABASE_SOCKET_PATH=/tmp/db.sock
+      - PAYMENT_PROCESSOR_URL_DEFAULT=http://payment-processor-default:8080
+      - PAYMENT_PROCESSOR_URL_FALLBACK=http://payment-processor-fallback:8080
+    volumes:
+      - rb2025:/tmp/
+    networks:
+      - payment-processor
+    depends_on:
+      - database
+    restart: unless-stopped
     deploy:
       resources:
         limits:
-          cpus: "0.5"
-          memory: "80MB"
+          cpus: "0.65"
+          memory: 155MB
+
+  api2:
+    build: ./backend
+    container_name: api2
+    hostname: api2
+    environment:
+      - SERVER_SOCKET_PATH=/tmp/api2.sock
+      - DATABASE_SOCKET_PATH=/tmp/db.sock
+      - PAYMENT_PROCESSOR_URL_DEFAULT=http://payment-processor-default:8080
+      - PAYMENT_PROCESSOR_URL_FALLBACK=http://payment-processor-fallback:8080
+    volumes:
+      - rb2025:/tmp/
     networks:
-      - backend
       - payment-processor
     depends_on:
-      database:
-        condition: service_healthy
-    healthcheck:
-      test: wget --no-verbose --tries=1 --spider http://localhost:8080/healthcheck || exit 1
-      interval: 5m
-      timeout: 3s
-      retries: 3
-      start_period: 2m
+      - database
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.65"
+          memory: 155MB
 
-services:
-  backend-1:
-    <<: *backend
-    container_name: backend-1
-    hostname: backend-1
-  backend-2:
-    <<: *backend
-    container_name: backend-2
-    hostname: backend-2
-  nginx:
-    image: nginx
+  database:
+    build:
+      context: ./database-server
+      dockerfile: Dockerfile.database
+    container_name: database
+    hostname: database
+    environment:
+      - DATABASE_SOCKET_PATH=/tmp/db.sock
     volumes:
-      - ./.conf/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-    ports:
-      - "9999:8080"
-    depends_on:
-      backend-1:
-        condition: service_healthy
-      backend-2:
-        condition: service_healthy
+      - rb2025:/tmp/
     networks:
-      - backend
-    ulimits:
-      nofile:
-        soft: 65536
-        hard: 65536
+      - payment-processor
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.05"
+          memory: 50MB
+
+  nginx:
+    image: nginx:latest
+    container_name: nginx
+    ports:
+      - "9999:9999"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - rb2025:/tmp/
+    depends_on:
+      - api1
+      - api2
+    networks:
+      - payment-processor
+    restart: unless-stopped
     deploy:
       resources:
         limits:
           cpus: "0.2"
-          memory: "50MB"
-  database:
-    image: postgres
-    command: 'postgres -c max_connections=400 -c synchronous_commit=off -c fsync=off -c full_page_writes=off'
-    networks:
-      - payment-processor
-    volumes:
-      - ./.conf/postgres/:/docker-entrypoint-initdb.d/
-    environment:
-      - POSTGRES_PASSWORD=password
-      - POSTGRES_USER=user
-      - POSTGRES_DB=db
-    ports:
-      - "5432:5432"
-    healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U user -d db" ]
-      interval: 1s
-      timeout: 5s
-      retries: 5
-    deploy:
-      resources:
-        limits:
-          cpus: "0.3"
-          memory: "140MB"
+          memory: 40MB
+
+volumes:
+  rb2025:
+    driver: local
 
 networks:
-  backend:
-    driver: bridge
   payment-processor:
     external: true
+    driver: bridge
