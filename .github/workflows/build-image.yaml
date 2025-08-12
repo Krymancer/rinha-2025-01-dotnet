@@ -20,11 +20,11 @@ jobs:
         include:
           - name: backend
             context: ./backend
-            dockerfile: ./backend/Dockerfile
+            dockerfile: Dockerfile
             image-suffix: -backend
           - name: database
             context: ./database-server
-            dockerfile: ./database-server/Dockerfile.database
+            dockerfile: Dockerfile.database
             image-suffix: -database
     # Sets the permissions granted to the `GITHUB_TOKEN` for the actions in this job.
     permissions:
