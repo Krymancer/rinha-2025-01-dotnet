@@ -24,7 +24,7 @@ jobs:
             image-suffix: -backend
           - name: database
             context: ./database-server
-            dockerfile: Dockerfile.database
+            dockerfile: Dockerfile
             image-suffix: -database
     # Sets the permissions granted to the `GITHUB_TOKEN` for the actions in this job.
     permissions:

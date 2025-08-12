@@ -368,10 +368,6 @@ FodyWeavers.xsd
 # JetBrains Rider
 *.sln.iml
 
-# Docker
-.dockerignore
-Dockerfile*
-
 # Environment variables
 .env
 .env.local
