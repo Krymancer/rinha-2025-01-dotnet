@@ -20,11 +20,9 @@ jobs:
         include:
           - name: backend
             context: ./backend
-            dockerfile: Dockerfile
             image-suffix: -backend
           - name: database
             context: ./database-server
-            dockerfile: Dockerfile
             image-suffix: -database
     # Sets the permissions granted to the `GITHUB_TOKEN` for the actions in this job.
     permissions:
@@ -57,7 +55,6 @@ jobs:
         uses: docker/build-push-action@f2a1d5e99d037542a71f64918e516c093c6f3fc4
         with:
           context: ${{ matrix.context }}
-          file: ${{ matrix.dockerfile }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
