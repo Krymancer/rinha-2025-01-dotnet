@@ -4,17 +4,18 @@ using Backend.Models;
 
 namespace Backend.Services;
 
-public class PaymentProcessorRouter
+public class PaymentProcessorRouter : IDisposable
 {
   private readonly Dictionary<ProcessorType, PaymentProcessor> _processors;
-  private readonly PaymentProcessor _optimalProcessor;
+  private readonly HealthCheckService _healthCheckService;
   private readonly HttpClient _httpClient;
   private readonly int _requestTimeoutMs;
   private int _delayMs = 75;
 
-  public PaymentProcessorRouter(AppConfig config)
+  public PaymentProcessorRouter(AppConfig config, HealthCheckService healthCheckService)
   {
     _requestTimeoutMs = config.PaymentRouter.RequestTimeoutMs;
+    _healthCheckService = healthCheckService;
 
     _processors = new Dictionary<ProcessorType, PaymentProcessor>
     {
@@ -22,16 +23,14 @@ public class PaymentProcessorRouter
       [ProcessorType.Fallback] = new PaymentProcessor(config.PaymentProcessors.Fallback.Url, ProcessorType.Fallback)
     };
 
-    _optimalProcessor = _processors[ProcessorType.Default];
-    _httpClient = new HttpClient();
+    _httpClient = new HttpClient { Timeout = TimeSpan.FromMilliseconds(_requestTimeoutMs + 500) };
   }
 
   private async Task<ProcessedPayment> MakePaymentRequestAsync(
       PaymentRequest payment,
       string requestedAt,
-      PaymentProcessor? processor = null)
+      PaymentProcessor processor)
   {
-    var currentProcessor = processor ?? _optimalProcessor;
     var paymentData = new PaymentProcessorRequest(
         payment.CorrelationId,
         payment.Amount,
@@ -43,7 +42,16 @@ public class PaymentProcessorRouter
     var json = JsonSerializer.Serialize(paymentData, AppJsonContext.Default.PaymentProcessorRequest);
     var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
 
-    var response = await _httpClient.PostAsync($"{currentProcessor.Url}/payments", content, cts.Token);
+    Console.WriteLine($"Sending to {processor.Url}/payments: {json}");
+
+    var response = await _httpClient.PostAsync($"{processor.Url}/payments", content, cts.Token);
+
+    if (!response.IsSuccessStatusCode)
+    {
+      var errorContent = await response.Content.ReadAsStringAsync(cts.Token);
+      Console.WriteLine($"Payment processor error ({response.StatusCode}): {errorContent}");
+    }
+
     response.EnsureSuccessStatusCode();
 
     var responseContent = await response.Content.ReadAsStringAsync(cts.Token);
@@ -53,7 +61,7 @@ public class PaymentProcessorRouter
     return new ProcessedPayment(
         data.CorrelationId,
         data.Amount,
-        currentProcessor.Type,
+        processor.Type,
         data.RequestedAt
     );
   }
@@ -61,28 +69,71 @@ public class PaymentProcessorRouter
   public async Task<ProcessedPayment> ProcessPaymentWithRetryAsync(
       PaymentRequest payment,
       string requestedAt,
-      PaymentProcessor? processor = null)
+      ProcessorType? preferredProcessor = null)
   {
-    var currentProcessor = processor ?? _processors[ProcessorType.Default];
+    // CRITICAL FIX: Always try Default first, only fallback if it actually fails
+    var processorType = preferredProcessor ?? ProcessorType.Default;
+    var processor = _processors[processorType];
+    var retryCount = 0;
+    var maxRetries = 3;
 
-    try
+    while (retryCount < maxRetries)
     {
-      var response = await MakePaymentRequestAsync(payment, requestedAt, currentProcessor);
-      return response;
-    }
-    catch (Exception)
-    {
-      // Retry with delay using the same processor (as per original code)
-      await Task.Delay(_delayMs);
-      Interlocked.Add(ref _delayMs, 75);
+      try
+      {
+        var response = await MakePaymentRequestAsync(payment, requestedAt, processor);
+        Console.WriteLine($"Payment processed successfully via {processorType}");
+        return response;
+      }
+      catch (Exception ex)
+      {
+        retryCount++;
+        Console.WriteLine($"Payment failed via {processorType}: {ex.Message}");
 
-      var alternativeProcessor = _processors[ProcessorType.Default];
-      return await ProcessPaymentWithRetryAsync(payment, requestedAt, alternativeProcessor);
+        // Only try fallback if we've exhausted retries on default AND fallback is available
+        if (retryCount >= maxRetries && processorType == ProcessorType.Default)
+        {
+          var fallbackHealth = await _healthCheckService.GetHealthAsync(ProcessorType.Fallback);
+
+          if (!fallbackHealth.Failing)
+          {
+            try
+            {
+              Console.WriteLine($"Trying fallback processor: Fallback");
+              processor = _processors[ProcessorType.Fallback];
+              processorType = ProcessorType.Fallback;
+              var fallbackResponse = await MakePaymentRequestAsync(payment, requestedAt, processor);
+              Console.WriteLine($"Fallback processor Fallback succeeded");
+              return fallbackResponse;
+            }
+            catch (Exception fallbackEx)
+            {
+              Console.WriteLine($"Fallback processor Fallback also failed: {fallbackEx.Message}");
+              // Continue with default retry logic
+            }
+          }
+        }
+
+        if (retryCount < maxRetries)
+        {
+          // Exponential backoff but faster recovery
+          var delay = Math.Min(50 * (int)Math.Pow(2, retryCount - 1), 500);
+          Console.WriteLine($"Retrying with {processorType} after delay");
+          await Task.Delay(delay);
+        }
+        else
+        {
+          throw; // Re-throw the last exception after all retries
+        }
+      }
     }
+
+    throw new InvalidOperationException("Payment processing failed after all retries");
   }
 
   public void Dispose()
   {
     _httpClient.Dispose();
+    _healthCheckService.Dispose();
   }
 }

@@ -41,8 +41,23 @@ public class DatabaseServerProgram
 
         app.MapPost("/payments/batch", (ProcessedPayment[] payments) =>
         {
-            databaseService.PersistPayments(payments);
-            return Results.Ok();
+            Console.WriteLine($"Database received batch with {payments.Length} payments");
+            foreach (var payment in payments)
+            {
+                Console.WriteLine($"Payment: {payment.CorrelationId}, {payment.Amount}, {payment.Processor}");
+            }
+
+            try
+            {
+                databaseService.PersistPayments(payments);
+                Console.WriteLine("Payments persisted successfully");
+                return Results.Ok();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error persisting payments: {ex}");
+                throw;
+            }
         });
 
         app.MapGet("/payments-summary", (string? from, string? to) =>

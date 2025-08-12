@@ -1,6 +1,4 @@
-using System.Text.Json;
 using Backend.Configuration;
-using Backend.Database;
 using Backend.Models;
 
 namespace Backend.Database;
@@ -18,7 +16,6 @@ public class DatabaseServer
 
   public async Task StartAsync()
   {
-    // Clean up existing socket file
     if (File.Exists(_socketPath))
     {
       File.Delete(_socketPath);
@@ -54,7 +51,7 @@ public class DatabaseServer
     {
       await _databaseService.PurgeDatabaseAsync();
       var response = new PurgeResponse(
-              "MemoryDB purged successfully",
+              "Data purged successfully",
               DateTimeOffset.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
           );
       return Results.Ok(response);

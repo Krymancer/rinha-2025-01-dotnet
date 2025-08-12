@@ -35,13 +35,18 @@ public record PurgeResponse(
     [property: JsonPropertyName("timestamp")] string Timestamp
 );
 
+public record ProcessorHealthResponse(
+    [property: JsonPropertyName("failing")] bool Failing,
+    [property: JsonPropertyName("minResponseTime")] int MinResponseTime
+);
+
 [JsonConverter(typeof(JsonStringEnumConverter<ProcessorType>))]
 public enum ProcessorType
 {
-  [JsonPropertyName("default")]
-  Default,
-  [JsonPropertyName("fallback")]
-  Fallback
+    [JsonPropertyName("default")]
+    Default,
+    [JsonPropertyName("fallback")]
+    Fallback
 }
 
 public record PaymentProcessor(

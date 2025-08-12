@@ -11,7 +11,9 @@ namespace Backend.Configuration;
 [JsonSerializable(typeof(PaymentSummaryData))]
 [JsonSerializable(typeof(PurgeResponse))]
 [JsonSerializable(typeof(ProcessorType))]
+[JsonSerializable(typeof(ProcessorHealthResponse))]
 [JsonSerializable(typeof(ProcessedPayment[]))]
+[JsonSerializable(typeof(Backend.Services.DatabaseProcessedPayment[]))]
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

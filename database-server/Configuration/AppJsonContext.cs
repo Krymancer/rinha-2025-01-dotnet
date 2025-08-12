@@ -4,13 +4,10 @@ using Backend.Models;
 
 namespace Backend.Configuration;
 
-[JsonSerializable(typeof(PaymentRequest))]
-[JsonSerializable(typeof(PaymentProcessorRequest))]
 [JsonSerializable(typeof(ProcessedPayment))]
 [JsonSerializable(typeof(PaymentSummary))]
 [JsonSerializable(typeof(PaymentSummaryData))]
 [JsonSerializable(typeof(PurgeResponse))]
-[JsonSerializable(typeof(ProcessorType))]
 [JsonSerializable(typeof(ProcessedPayment[]))]
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,

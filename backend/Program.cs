@@ -49,6 +49,7 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
 // Register services
 builder.Services.AddSingleton(config);
 builder.Services.AddSingleton<QueueService<PaymentRequest>>();
+builder.Services.AddSingleton<HealthCheckService>();
 builder.Services.AddSingleton<PaymentProcessorRouter>();
 builder.Services.AddSingleton(provider => new DatabaseClient(provider.GetRequiredService<AppConfig>()));
 builder.Services.AddSingleton<PaymentCommand>();

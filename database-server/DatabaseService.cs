@@ -19,7 +19,8 @@ public class DatabaseService
     {
       if (DateTimeOffset.TryParse(payment.RequestedAt, out var timestamp))
       {
-        _memoryStore.Add(timestamp.ToUnixTimeMilliseconds(), payment.Amount);
+        // Now correctly track the actual processor used
+        _memoryStore.Add(timestamp.ToUnixTimeMilliseconds(), payment.Amount, payment.Processor);
       }
     }
   }
@@ -39,29 +40,23 @@ public class DatabaseService
     var filteredData = allData.Where(item =>
         item.Timestamp >= fromTimestamp && item.Timestamp <= toTimestamp).ToList();
 
-    var defaultSummary = new PaymentSummaryData(0, 0);
-    var fallbackSummary = new PaymentSummaryData(0, 0);
+    var defaultItems = filteredData.Where(item => item.Processor == "default");
+    var fallbackItems = filteredData.Where(item => item.Processor == "fallback");
 
-    var defaultItems = filteredData.Where(item => item.Processor == ProcessorType.Default);
-    var fallbackItems = filteredData.Where(item => item.Processor == ProcessorType.Fallback);
+    var defaultSummary = new PaymentSummaryData(
+        TotalRequests: defaultItems.Count(),
+        TotalAmount: defaultItems.Sum(item => item.Value)
+    );
 
-    if (defaultItems.Any())
-    {
-      defaultSummary = new PaymentSummaryData(
-          TotalRequests: defaultItems.Count(),
-          TotalAmount: defaultItems.Sum(item => item.Value)
-      );
-    }
+    var fallbackSummary = new PaymentSummaryData(
+        TotalRequests: fallbackItems.Count(),
+        TotalAmount: fallbackItems.Sum(item => item.Value)
+    );
 
-    if (fallbackItems.Any())
-    {
-      fallbackSummary = new PaymentSummaryData(
-          TotalRequests: fallbackItems.Count(),
-          TotalAmount: fallbackItems.Sum(item => item.Value)
-      );
-    }
-
-    return new PaymentSummary(defaultSummary, fallbackSummary);
+    return new PaymentSummary(
+        Default: defaultSummary,
+        Fallback: fallbackSummary
+    );
   }
 
   public Task PurgeDatabaseAsync()

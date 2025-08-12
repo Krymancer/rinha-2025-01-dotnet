@@ -60,6 +60,20 @@ public class DatabaseClient
     response.EnsureSuccessStatusCode();
   }
 
+  private async Task SendDatabasePaymentsAsync(string path, HttpMethod method, DatabaseProcessedPayment[]? body = null)
+  {
+    var request = new HttpRequestMessage(method, $"http://localhost{path}");
+
+    if (body != null)
+    {
+      var json = JsonSerializer.Serialize(body, AppJsonContext.Default.DatabaseProcessedPaymentArray);
+      request.Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+    }
+
+    var response = await _httpClient.SendAsync(request);
+    response.EnsureSuccessStatusCode();
+  }
+
   private async Task FlushBatchAsync()
   {
     if (_isFlushingBatch || _batchQueue.IsEmpty) return;
@@ -88,7 +102,27 @@ public class DatabaseClient
 
         if (allPayments.Length > 0)
         {
-          await SendHttpRequestAsync("/payments/batch", HttpMethod.Post, allPayments);
+          // Convert backend ProcessedPayment (with enum) to database format (with string)
+          var dbPayments = allPayments.Select(p => new DatabaseProcessedPayment(
+            p.CorrelationId,
+            p.Amount,
+            p.Processor.ToString().ToLowerInvariant(), // Convert enum to lowercase string
+            p.RequestedAt
+          )).ToArray();
+
+          Console.WriteLine($"Sending {dbPayments.Length} payments to database");
+          Console.WriteLine($"Database payload: {JsonSerializer.Serialize(dbPayments, AppJsonContext.Default.DatabaseProcessedPaymentArray)}");
+
+          try
+          {
+            await SendDatabasePaymentsAsync("/payments/batch", HttpMethod.Post, dbPayments);
+            Console.WriteLine("Database request successful");
+          }
+          catch (Exception ex)
+          {
+            Console.WriteLine($"Database request failed: {ex.Message}");
+            throw;
+          }
         }
 
         foreach (var item in currentBatch)

@@ -28,19 +28,30 @@ public class PaymentCommand
   {
     var requestedAt = DateTimeOffset.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
 
+    // Process payments concurrently but limit concurrency to avoid overwhelming the payment processors
+    var semaphore = new SemaphoreSlim(Environment.ProcessorCount * 2);
     var tasks = payments.Select(async payment =>
     {
-      var result = await _paymentRouter.ProcessPaymentWithRetryAsync(payment, requestedAt);
-      return new ProcessedPayment(
-              payment.CorrelationId,
-              payment.Amount,
-              result.Processor,
-              requestedAt
-          );
+      await semaphore.WaitAsync();
+      try
+      {
+        var result = await _paymentRouter.ProcessPaymentWithRetryAsync(payment, requestedAt);
+        return new ProcessedPayment(
+                payment.CorrelationId,
+                payment.Amount,
+                result.Processor,
+                requestedAt
+            );
+      }
+      finally
+      {
+        semaphore.Release();
+      }
     });
 
     var processedPayments = await Task.WhenAll(tasks);
 
+    // CRITICAL: Ensure database persistence completes successfully
     await _databaseClient.PersistPaymentsBatchAsync(processedPayments);
 
     return processedPayments.ToList();
@@ -48,20 +59,19 @@ public class PaymentCommand
 
   public async Task ProcessPaymentsAsync()
   {
-    if (!await _processingMutex.WaitAsync(0)) return;
+    if (!await _processingMutex.WaitAsync(0))
+      return;
 
     try
     {
-      var remaining = _queue.Count;
-      while (remaining > 0)
+      while (_queue.Count > 0)
       {
-        var batchSize = Math.Min(_batchSize, remaining);
+        var batchSize = Math.Min(_batchSize, _queue.Count);
         var batch = _queue.DequeueMultiple(batchSize);
 
         if (batch.Count == 0) break;
 
         await ProcessPaymentBatchAsync(batch);
-        remaining -= batch.Count;
       }
     }
     catch (Exception ex)
@@ -78,7 +88,7 @@ public class PaymentCommand
   {
     _queue.Enqueue(input);
 
-    // Fire and forget processing
+    // Start processing if not already running
     _ = Task.Run(ProcessPaymentsAsync);
   }
 

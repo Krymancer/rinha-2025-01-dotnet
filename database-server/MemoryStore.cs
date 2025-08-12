@@ -1,14 +1,19 @@
-using Backend.Models;
-
 namespace Backend.Database;
+
+public record StoredItem(
+    long Timestamp,
+    decimal Value,
+    string Processor
+);
 
 public class MemoryStore
 {
-  private const int AmountMask = 0x7ff;
-  private const int TimestampMask = 0x1fffff;
+  private const int AmountMask = 0xffff;      // 16 bits for amount (max $655.35)
+  private const int TimestampMask = 0xffff;   // 16 bits for timestamp (max ~18 hours)
 
   private readonly long _createdAt;
   private readonly List<int> _items = [];
+  private readonly List<string> _processors = [];
   private readonly object _lock = new();
 
   public MemoryStore()
@@ -18,41 +23,47 @@ public class MemoryStore
 
   private int Pack(decimal amount, long timestampMs)
   {
-    var cents = (int)(amount * 100 + 0.5m);
+    var cents = (int)Math.Round(amount * 100, 0, MidpointRounding.AwayFromZero);
 
     if (cents > AmountMask)
     {
-      throw new ArgumentException($"Amount too high: maximum R$ {AmountMask / 100.0:F2} (current: R$ {amount:F2})");
+      throw new ArgumentException($"Amount too high: maximum ${AmountMask / 100.0:F2} (current: ${amount:F2})");
     }
 
     var rel = timestampMs - _createdAt;
 
     if (rel < 0 || rel > TimestampMask)
     {
-      throw new ArgumentException($"Timestamp out of range: maximum {TimestampMask}ms (~{TimestampMask / 60000.0:F1} min)");
+      throw new ArgumentException($"Timestamp out of range: maximum {TimestampMask}ms");
     }
 
-    return (int)(((uint)rel << 11) | (uint)cents);
+    return ((int)rel << 16) | cents;
   }
 
   private (decimal Amount, long Timestamp) Unpack(int packed)
   {
     var cents = packed & AmountMask;
-    var rel = ((uint)packed >> 11) & TimestampMask;
+    var rel = (packed >> 16) & TimestampMask;
 
     return (
-        Amount: cents * 0.01m,
+        Amount: cents / 100.0m,
         Timestamp: _createdAt + rel
     );
   }
 
   public void Add(long timestampMs, decimal value)
   {
+    Add(timestampMs, value, "default");
+  }
+
+  public void Add(long timestampMs, decimal value, string processor)
+  {
     var packed = Pack(value, timestampMs);
 
     lock (_lock)
     {
       _items.Add(packed);
+      _processors.Add(processor);
     }
 
     Console.WriteLine($"add {DateTimeOffset.UtcNow:yyyy-MM-ddTHH:mm:ss.fffZ}");
@@ -64,13 +75,15 @@ public class MemoryStore
 
     lock (_lock)
     {
-      foreach (var packed in _items)
+      for (int i = 0; i < _items.Count; i++)
       {
-        var unpacked = Unpack(packed);
+        var unpacked = Unpack(_items[i]);
+        var processor = i < _processors.Count ? _processors[i] : "default";
+
         result.Add(new StoredItem(
             Timestamp: unpacked.Timestamp,
             Value: unpacked.Amount,
-            Processor: ProcessorType.Default
+            Processor: processor
         ));
       }
     }
@@ -83,12 +96,7 @@ public class MemoryStore
     lock (_lock)
     {
       _items.Clear();
+      _processors.Clear();
     }
   }
 }
-
-public record StoredItem(
-    long Timestamp,
-    decimal Value,
-    ProcessorType Processor
-);
