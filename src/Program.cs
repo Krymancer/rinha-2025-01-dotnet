@@ -33,11 +33,11 @@ builder.Services.AddSingleton<PersistenceChannel>();
 builder.Services.AddHostedService<PaymentProcessingJob>();
 builder.Services.AddHostedService<PaymentPersistingJob>();
 
-var processingBatchSize = builder.Configuration.GetRequiredSection("JobsConfig:ProcessingBatchSize").Get<int>();
-var processingParalellism = builder.Configuration.GetRequiredSection("JobsConfig:ProcessingParalellism").Get<int>();
-var processingWait = builder.Configuration.GetRequiredSection("JobsConfig:ProcessingWait").Get<int>();
-var persistenceBatchSize = builder.Configuration.GetRequiredSection("JobsConfig:PersistenceBatchSize").Get<int>();
-var persistenceWait = builder.Configuration.GetRequiredSection("JobsConfig:PersistenceWait").Get<int>();
+var processingBatchSize = builder.Configuration.GetRequiredSection("Jobs:ProcessingBatchSize").Get<int>();
+var processingParalellism = builder.Configuration.GetRequiredSection("Jobs:ProcessingParalellism").Get<int>();
+var processingWait = builder.Configuration.GetRequiredSection("Jobs:ProcessingWait").Get<int>();
+var persistenceBatchSize = builder.Configuration.GetRequiredSection("Jobs:PersistenceBatchSize").Get<int>();
+var persistenceWait = builder.Configuration.GetRequiredSection("Jobs:PersistenceWait").Get<int>();
 builder.Services.AddSingleton(new JobConfig
 {
     ProcessingBatchSize = processingBatchSize,
